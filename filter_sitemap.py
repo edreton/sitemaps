@@ -6,35 +6,62 @@ def filter_sitemap(url, output_file, product='platform'):
     try:
         # Descargar el sitemap
         response = requests.get(url)
-        response.raise_for_status()  # Verificar si hubo errores en la descarga
+        response.raise_for_status()
         
-        # Parsear el XML desde el contenido descargado
-        root = ET.fromstring(response.content)
+        # Crear el elemento raíz con el namespace correcto
+        root = ET.Element('urlset', xmlns='http://www.sitemaps.org/schemas/sitemap/0.9')
         
-        # Define the namespace
+        # Agregar el elemento script
+        script = ET.SubElement(root, 'script')
+        
+        # Parsear el XML descargado para procesar sus URLs
+        downloaded_root = ET.fromstring(response.content)
         namespace = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-        
-        # Find all URL elements
-        urls = root.findall('ns:url', namespace)
-        
-        # Keep track of URLs to remove
-        urls_to_remove = []
         
         # Filter URLs
         filter_prefix = f'https://docs.confluent.io/{product}/'
-        for url in urls:
-            loc = url.find('ns:loc', namespace)
-            if loc is not None:
-                if not loc.text.startswith(filter_prefix):
-                    urls_to_remove.append(url)
+        for url_elem in downloaded_root.findall('.//ns:url', namespace):
+            loc = url_elem.find('ns:loc', namespace)
+            if loc is not None and loc.text.startswith(filter_prefix):
+                # Crear nuevo elemento url
+                url = ET.SubElement(root, 'url')
+                # Agregar loc
+                loc_new = ET.SubElement(url, 'loc')
+                loc_new.text = loc.text
+                # Agregar lastmod
+                lastmod = url_elem.find('ns:lastmod', namespace)
+                if lastmod is not None:
+                    lastmod_new = ET.SubElement(url, 'lastmod')
+                    lastmod_new.text = lastmod.text
+                # Agregar changefreq
+                changefreq = url_elem.find('ns:changefreq', namespace)
+                if changefreq is not None:
+                    changefreq_new = ET.SubElement(url, 'changefreq')
+                    changefreq_new.text = changefreq.text
         
-        # Remove unwanted URLs
-        for url in urls_to_remove:
-            root.remove(url)
+        # Convertir el XML a string con la indentación correcta
+        def indent(elem, level=0):
+            i = "\n" + level*"  "
+            if len(elem):
+                if not elem.text or not elem.text.strip():
+                    elem.text = i + "  "
+                if not elem.tail or not elem.tail.strip():
+                    elem.tail = i
+                for subelem in elem:
+                    indent(subelem, level+1)
+                if not elem.tail or not elem.tail.strip():
+                    elem.tail = i
+            else:
+                if level and (not elem.tail or not elem.tail.strip()):
+                    elem.tail = i
+
+        # Aplicar indentación
+        indent(root)
         
-        # Write the filtered XML to a new file
-        tree = ET.ElementTree(root)
-        tree.write(output_file, encoding='utf-8', xml_declaration=True)
+        # Escribir el archivo manualmente para evitar la declaración XML
+        with open(output_file, 'w', encoding='utf-8') as f:
+            xml_str = ET.tostring(root, encoding='unicode')
+            f.write(xml_str)
         
         print(f"Sitemap filtrado para '{product}' guardado en {output_file}")
         
@@ -47,7 +74,7 @@ def filter_sitemap(url, output_file, product='platform'):
 
 # URL del sitemap y archivo de salida
 sitemap_url = 'https://docs.confluent.io/home/sitemap.xml'
-product = 'cloud'  # Aquí puedes cambiar a 'cloud' u otro valor
+product = 'platform'  # Aquí puedes cambiar a 'cloud' u otro valor
 output_file = f'filtered_{product}_sitemap.xml'
 
 # Ejecutar la función
